@@ -86,9 +86,9 @@ private:
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
 
-        ec.setClusterTolerance(0.5);
+        ec.setClusterTolerance(0.4);
         ec.setMinClusterSize(10);
-        ec.setMaxClusterSize(15);
+        ec.setMaxClusterSize(20);
         ec.setInputCloud(cloud);
         ec.extract(cluster_indices);
 
@@ -165,7 +165,7 @@ private:
             float height = std::abs(max_pt.z - min_pt.z);
 
             // Filter out straight-line clusters
-            if (length > 5 * width && length > 5 * height) {
+            if (length > 1.0 * width && length > 1.0 * height) {
                 RCLCPP_INFO(this->get_logger(), "Cluster removed: straight-line shape detected");
                 continue; // Skip this cluster
             }
@@ -256,7 +256,7 @@ private:
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>());
         pcl::VoxelGrid<pcl::PointXYZRGB> voxelGrid;
         voxelGrid.setInputCloud(cloud);
-        voxelGrid.setLeafSize(0.07, 0.07, 0.07); // Adjust leaf size as needed
+        voxelGrid.setLeafSize(0.1, 0.1, 0.1); // Adjust leaf size as needed
         voxelGrid.filter(*cloud_filtered);
 
         // Step 2: Detect flat surfaces using SAC Segmentation
@@ -266,7 +266,7 @@ private:
         seg.setOptimizeCoefficients(true);
         seg.setModelType(pcl::SACMODEL_PLANE);
         seg.setMethodType(pcl::SAC_RANSAC);
-        seg.setDistanceThreshold(0.02); // Adjust threshold as needed
+        seg.setDistanceThreshold(0.05); // Adjust threshold as needed
         seg.setInputCloud(cloud_filtered);
         seg.segment(*inliers, *coefficients);
 
