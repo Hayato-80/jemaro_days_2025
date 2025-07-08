@@ -4,32 +4,32 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <algorithm>
-
-#include <sensor_msgs/point_cloud2_iterator.hpp> // For iterating through PointCloud2 data
 #include <cmath>
 
+#include <sensor_msgs/point_cloud2_iterator.hpp> // For iterating through PointCloud2 data
 #include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp" // For PointStamped
+#include "visualization_msgs/msg/marker.hpp"
 
 #include "tf2_ros/buffer.h"                // For tf2_ros::Buffer
 #include "tf2_ros/transform_listener.h"    // For tf2_ros::TransformListener
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "tf2/LinearMath/Quaternion.h"
-
-#include "geometry_msgs/msg/point_stamped.hpp" // For PointStamped
 #include "tf2/exceptions.h"              // For TransformException
-
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp" // For tf2::doTransform
 
-#include "visualization_msgs/msg/marker.hpp"
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/common/common.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/common/centroid.h>
+#include <pcl/filters/voxel_grid.h>
 
 // #include <my_msgs/msg/my_output_msg.hpp>
 
@@ -53,7 +53,7 @@ public:
         // init publishers
         // New publisher (in your constructor)
         colored_pc_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/colored_pointcloud", 10);
-
+        pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/filtered_cluster_poses", 10);
         marker_publisher_ = create_publisher<visualization_msgs::msg::Marker>("/visualization_marker", 10);
         // tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
         tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -72,6 +72,7 @@ private:
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colored_pc_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
 
     std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
     
@@ -84,8 +85,9 @@ private:
 
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
-        ec.setClusterTolerance(0.2);
-        ec.setMinClusterSize(5);
+
+        ec.setClusterTolerance(0.5);
+        ec.setMinClusterSize(10);
         ec.setMaxClusterSize(15);
         ec.setInputCloud(cloud);
         ec.extract(cluster_indices);
@@ -93,7 +95,7 @@ private:
         return cluster_indices;
     }
 
-    bool isConeDetected(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cluster, Eigen::Vector4f& centroid, float& height, float& base_diameter) {
+    bool isConeDetected_intensity(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cluster, Eigen::Vector4f& centroid, float& height, float& base_diameter, float& average_intensity) {
         pcl::compute3DCentroid(*cluster, centroid);
 
         pcl::PointXYZI min_pt, max_pt;
@@ -101,14 +103,51 @@ private:
         height = max_pt.z - min_pt.z;
         base_diameter = std::sqrt(std::pow(max_pt.x - min_pt.x, 2) + std::pow(max_pt.y - min_pt.y, 2));
 
+        // Calculate average intensity
+        float total_intensity = 0.0f;
+        for (const auto& point : cluster->points) {
+            total_intensity += point.intensity;
+        }
+        average_intensity = total_intensity / cluster->points.size();
+
+        // Add intensity-based filtering criteria
         return (centroid[0] > 0.0 && std::abs(centroid[1]) < 2.0 &&
                 height > 0.3 && height < 1.0 &&
-                base_diameter > 0.2 && base_diameter < 0.5);
+                base_diameter > 0.2 && base_diameter < 0.5 &&
+                average_intensity > 50.0); // Adjust intensity threshold as needed
+    }
+
+    bool isConeDetected(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cluster, Eigen::Vector4f& centroid, float& height, float& base_diameter, float& average_intensity) {
+        // Compute the centroid of the cluster
+        pcl::compute3DCentroid(*cluster, centroid);
+
+        // Compute the bounding box dimensions
+        pcl::PointXYZI min_pt, max_pt;
+        pcl::getMinMax3D(*cluster, min_pt, max_pt);
+        height = max_pt.z - min_pt.z;
+        base_diameter = std::sqrt(std::pow(max_pt.x - min_pt.x, 2) + std::pow(max_pt.y - min_pt.y, 2));
+
+        // Calculate average intensity
+        float total_intensity = 0.0f;
+        for (const auto& point : cluster->points) {
+            total_intensity += point.intensity;
+        }
+        average_intensity = total_intensity / cluster->points.size();
+
+        // Debugging information
+        RCLCPP_INFO(this->get_logger(), "Cluster centroid: (%f, %f, %f), height: %f, base diameter: %f, average intensity: %f",
+                    centroid[0], centroid[1], centroid[2], height, base_diameter, average_intensity);
+
+        // Combine intensity and shape-based filtering criteria
+        return (centroid[0] > 0.0 && std::abs(centroid[1]) < 5.0 && // Lateral range
+                height > 0.3 && height < 1.5 && // Height range
+                base_diameter > 0.2 && base_diameter < 0.7 && // Base diameter range
+                average_intensity > 50.0); // Intensity threshold
     }
 
     std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> filterConeClusters(
-        const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud,
-        const std::vector<pcl::PointIndices>& cluster_indices)
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud,
+    const std::vector<pcl::PointIndices>& cluster_indices)
     {
         std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cone_clusters;
 
@@ -133,8 +172,8 @@ private:
 
             // Check if the cluster meets cone-specific criteria
             Eigen::Vector4f centroid;
-            float base_diameter;
-            if (isConeDetected(cluster, centroid, height, base_diameter)) {
+            float base_diameter, average_intensity;
+            if (isConeDetected(cluster, centroid, height, base_diameter,average_intensity)) {
                 cone_clusters.push_back(cluster);
             }
         }
@@ -149,25 +188,6 @@ private:
         sensor_point.point.x = centroid[0];
         sensor_point.point.y = centroid[1];
         sensor_point.point.z = centroid[2];
-
-        visualization_msgs::msg::Marker marker;
-        marker.header.stamp = this->get_clock()->now();
-        marker.header.frame_id = "ZOE3/os_sensor";
-        marker.ns = "cone_detection";
-        marker.id = cluster_id;
-        marker.type = visualization_msgs::msg::Marker::CYLINDER;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.pose.position.x = sensor_point.point.x;
-        marker.pose.position.y = sensor_point.point.y;
-        marker.pose.position.z = sensor_point.point.z;
-        marker.scale.x = base_diameter;
-        marker.scale.y = base_diameter;
-        marker.scale.z = height;
-        marker.color.r = 1.0;
-        marker.color.g = 0.5;
-        marker.color.b = 0.0;
-        marker.color.a = 1.0;
-        marker_publisher_->publish(marker);
 
         geometry_msgs::msg::TransformStamped st;
         st.header.stamp = this->get_clock()->now();
@@ -189,7 +209,7 @@ private:
 
         visualization_msgs::msg::Marker marker;
         marker.header.stamp = this->get_clock()->now();
-        marker.header.frame_id = "ZOE3/os_sensor";
+        marker.header.frame_id = "map";
         marker.ns = "cluster_visualization";
         marker.id = cluster_id;
         marker.type = visualization_msgs::msg::Marker::SPHERE;
@@ -225,21 +245,86 @@ private:
 
         sensor_msgs::msg::PointCloud2 output_msg;
         pcl::toROSMsg(*colored_cloud, output_msg);
-        output_msg.header.frame_id = "ZOE3/os_sensor";
+        output_msg.header.frame_id = "/ZOE3/os_sensor"; // Use the correct frame ID
         output_msg.header.stamp = this->get_clock()->now();
         colored_pc_publisher_->publish(output_msg);
     }
 
+    void removeFlatSurfaces(pcl::PointCloud<pcl::PointXYZRGB>::Ptr& cloud)
+    {
+        // Step 1: Downsample the point cloud using Voxel Grid
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::VoxelGrid<pcl::PointXYZRGB> voxelGrid;
+        voxelGrid.setInputCloud(cloud);
+        voxelGrid.setLeafSize(0.07, 0.07, 0.07); // Adjust leaf size as needed
+        voxelGrid.filter(*cloud_filtered);
+
+        // Step 2: Detect flat surfaces using SAC Segmentation
+        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients());
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        pcl::SACSegmentation<pcl::PointXYZRGB> seg;
+        seg.setOptimizeCoefficients(true);
+        seg.setModelType(pcl::SACMODEL_PLANE);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setDistanceThreshold(0.02); // Adjust threshold as needed
+        seg.setInputCloud(cloud_filtered);
+        seg.segment(*inliers, *coefficients);
+
+        // Step 3: Remove inliers (flat surface points)
+        pcl::ExtractIndices<pcl::PointXYZRGB> extract;
+        extract.setInputCloud(cloud_filtered);
+        extract.setIndices(inliers);
+        extract.setNegative(true); // Keep points that are not part of the plane
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr final_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        extract.filter(*final_cloud);
+
+        // Replace the original cloud with the filtered cloud
+        cloud.swap(final_cloud);
+    }
+
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>());
+        // Convert ROS PointCloud2 message to PCL PointCloud
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
         pcl::fromROSMsg(*msg, *cloud);
 
-        std::vector<pcl::PointIndices> cluster_indices = performClustering(cloud);
-         std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cone_clusters = filterConeClusters(cloud, cluster_indices);
-        RCLCPP_INFO(this->get_logger(), "Detected %zu clusters", cluster_indices.size());
+        // Remove flat surfaces
+        removeFlatSurfaces(cloud);
 
-        publishColoredPointCloud(cloud, cluster_indices);
+        // Perform clustering
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_xyz(new pcl::PointCloud<pcl::PointXYZI>());
+        pcl::copyPointCloud(*cloud, *cloud_xyz);
+        std::vector<pcl::PointIndices> cluster_indices = performClustering(cloud_xyz);
+
+        // Filter cone clusters
+        std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cone_clusters = filterConeClusters(cloud_xyz, cluster_indices);
+        RCLCPP_INFO(this->get_logger(), "Detected %zu clusters", cluster_indices.size());
+        RCLCPP_INFO(this->get_logger(), "Filtered %zu cone clusters", cone_clusters.size());
+
+        publishColoredPointCloud(cloud_xyz, cluster_indices);
+
+        // Publish poses of filtered clusters
+        int cluster_id = 0;
+        for (const auto& cluster : cone_clusters) {
+            Eigen::Vector4f centroid;
+            float height, base_diameter, average_intensity;
+            if (isConeDetected(cluster, centroid, height, base_diameter,average_intensity)) {
+                geometry_msgs::msg::PoseStamped pose_msg;
+                pose_msg.header.frame_id = "map"; // Publish in the global frame
+                pose_msg.header.stamp = this->get_clock()->now();
+                pose_msg.pose.position.x = centroid[0];
+                pose_msg.pose.position.y = centroid[1];
+                pose_msg.pose.position.z = centroid[2];
+                pose_msg.pose.orientation.x = 0.0;
+                pose_msg.pose.orientation.y = 0.0;
+                pose_msg.pose.orientation.z = 0.0;
+                pose_msg.pose.orientation.w = 1.0;
+
+                RCLCPP_INFO(this->get_logger(), "Publishing pose for cluster %d at (%f, %f, %f)", cluster_id, centroid[0], centroid[1], centroid[2]);
+                pose_publisher_->publish(pose_msg);
+                cluster_id++;
+            }
+        }
     }
 };
 

@@ -54,6 +54,13 @@ windows:
       - commands:
         - ros2 run clean_point_cloud clean_point_cloud_node
 
+  - name: detection node
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - ros2 run object_detection cone_detection_pcl
+
   - name: some_other_window
     if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
     layout: no_split # One can use the default layouts specified by tmux
