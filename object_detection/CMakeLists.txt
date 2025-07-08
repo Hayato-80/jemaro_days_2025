@@ -26,8 +26,14 @@ link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
 add_executable(cone_detection_pcl src/cone_detection_pcl.cpp)
-ament_target_dependencies(cone_detection_pcl rclcpp sensor_msgs visualization_msgs tf2_ros pcl_conversions pcl_msgs)
+ament_target_dependencies(cone_detection_pcl rclcpp sensor_msgs visualization_msgs tf2 tf2_ros pcl_conversions pcl_msgs)
 target_link_libraries(cone_detection_pcl ${PCL_LIBRARIES})
+install(TARGETS cone_detection_pcl DESTINATION lib/${PROJECT_NAME})
+
+add_executable(cone_detection_node src/cone_detection_node.cpp)
+ament_target_dependencies(cone_detection_node rclcpp sensor_msgs visualization_msgs tf2_ros)
+install(TARGETS cone_detection_node DESTINATION lib/${PROJECT_NAME})
+
 
 
 if(BUILD_TESTING)
