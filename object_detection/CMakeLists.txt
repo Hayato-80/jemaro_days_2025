@@ -48,7 +48,11 @@ install(TARGETS cone_detection_pcl DESTINATION lib/${PROJECT_NAME})
 # ament_target_dependencies(cone_detection_node rclcpp sensor_msgs visualization_msgs tf2_ros)
 # install(TARGETS cone_detection_node DESTINATION lib/${PROJECT_NAME})
 
-
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+  
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

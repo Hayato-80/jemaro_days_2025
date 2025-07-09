@@ -51,7 +51,7 @@ public:
         // pc_subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       	// 	"/ZOE3/os_node/points", 10, std::bind(&DetectionNode::pointcloud_callback, this, std::placeholders::_1));
         path_subscription_ = this->create_subscription<nav_msgs::msg::Path>(
-            "/path", 10, std::bind(&DetectionNode::path_callback, this, std::placeholders::_1));
+            "/path_ref", 10, std::bind(&DetectionNode::path_callback, this, std::placeholders::_1));
         // init publishers
         // New publisher (in your constructor)
         colored_pc_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/colored_pointcloud", 10);
