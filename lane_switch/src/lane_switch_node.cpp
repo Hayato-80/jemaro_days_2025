@@ -91,20 +91,21 @@ public:
 
     // Timer for continuous path publishing and state management
     publish_timer_ = this->create_wall_timer(
-        50ms, [this]()
+        500ms, [this]()
         {
           updatePath();
           nav_msgs::msg::Path extended_path = extendPath(reference_path_);
           path_pub_->publish(extended_path); });
 
     return_check_timer_ = this->create_wall_timer(
-        1s, [this]()
+        50ms, [this]()
         {
           if (current_state_ == State::LEFT_LANE) {
             auto elapsed = (this->now() - transition_start_time_).seconds();
             if (elapsed >= avoidance_duration_) {
               current_state_ = State::TRANSITION_TO_REF;
               transition_start_time_ = this->now();
+              obstacle_positions_.clear(); // <-- Clear all obstacles when returning
               RCLCPP_INFO(this->get_logger(), "Avoidance complete. Returning to reference path");
             }
           } });
@@ -261,10 +262,9 @@ private:
     {
       current_state_ = State::TRANSITION_TO_LEFT;
       transition_start_time_ = this->now();
-      RCLCPP_WARN(this->get_logger(), "Obstacle detected ahead! Switching to left lane");
       RCLCPP_WARN(this->get_logger(),
                   "Obstacle detected ahead! Switching to left lane\n"
-                  "  Vehicle Position: (%.2f, %.2f)\n",
+                  "  Vehicle Position: (%.2f, %.2f)",
                   current_pose_->position.x,
                   current_pose_->position.y);
     }
