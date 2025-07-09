@@ -20,6 +20,10 @@ def generate_launch_description():
                         "path_extension_resolution": 1.0,
                     }
                 ],
+                # remappings=[
+                #     ("/path", "/ZOE3/path_follower/setPath"),
+                #     ("/prius/ground_truth", "/ZOE3/position/map_ekf_odometry"),
+                # ],
                 output="screen",
             )
         ]

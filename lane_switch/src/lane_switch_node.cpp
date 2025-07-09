@@ -16,8 +16,9 @@ public:
   {
     // Configuration parameters
     obstacle_positions_ = {
-        {1.77, -0.44}, // First obstacle (right side)
-        {1.88, 6.95}   // Second obstacle (right side)
+        // {1.77, -0.44}, // First obstacle (right side)
+        {1040.0, 749.0},
+        {1.88, 6.95} // Second obstacle (right side)
     };
     // Declare parameters with default values
     this->declare_parameter<double>("trigger_distance", 20.0);
@@ -64,7 +65,7 @@ public:
         });
 
     ground_truth_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/prius/ground_truth", 10,
+        "/ZOE3/position/map_ekf_odometry", 10,
         [this](const nav_msgs::msg::Odometry::SharedPtr msg)
         {
           current_pose_ = msg->pose.pose;
@@ -72,7 +73,7 @@ public:
         });
 
     // Create publisher
-    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/path", 10);
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/ZOE3/path_follower/setPath", 10);
 
     // Timer for continuous path publishing and state management
     publish_timer_ = this->create_wall_timer(
@@ -203,7 +204,8 @@ private:
     }
 
     reference_path_.poses.clear();
-    reference_path_.header.frame_id = ref_path_->header.frame_id;
+    // reference_path_.header.frame_id = ref_path_->header.frame_id;
+    reference_path_.header.frame_id = "map"; // Set to appropriate frame
     reference_path_.header.stamp = this->now();
 
     size_t path_length = std::min({right_threshold_->poses.size(),

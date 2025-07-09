@@ -59,6 +59,11 @@ Launch the pointcloud downsampling node (based on https://github.com/LihanChen20
 ros2 launch pointcloud_downsampling pointcloud_downsampling.launch.py
 ```
 
+rosbag lanes
+rosbag pointcloud
 
+rl lane_switch
+rr object_detection
+rm clean_point_cloud
 
 
