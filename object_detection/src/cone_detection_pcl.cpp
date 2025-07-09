@@ -192,8 +192,8 @@ private:
             // Calculate bounding box dimensions
             pcl::PointXYZI min_pt, max_pt;
             pcl::getMinMax3D(*cluster, min_pt, max_pt);
-            float length = std::sqrt(std::pow(max_pt.x - min_pt.x, 2) + std::pow(max_pt.y - min_pt.y, 2));
-            float width = std::abs(max_pt.y - min_pt.y);
+            // float length = std::sqrt(std::pow(max_pt.x - min_pt.x, 2) + std::pow(max_pt.y - min_pt.y, 2));
+            // float width = std::abs(max_pt.y - min_pt.y);
             float height = std::abs(max_pt.z - min_pt.z);
 
             // Filter out straight-line clusters
@@ -237,7 +237,8 @@ private:
     void publishConeData(const Eigen::Vector4f& centroid, float height, float base_diameter, int cluster_id) {
         geometry_msgs::msg::PointStamped sensor_point, map_point;
         sensor_point.header.frame_id = "ZOE3/os_sensor";
-        sensor_point.header.stamp = this->get_clock()->now();
+        // sensor_point.header.stamp = this->get_clock()->now();
+        sensor_point.header.stamp = rclcpp::Time(0); // Use the latest available transform
         sensor_point.point.x = centroid[0];
         sensor_point.point.y = centroid[1];
         sensor_point.point.z = centroid[2];
@@ -392,22 +393,39 @@ private:
         for (const auto& cluster : cone_clusters) {
             Eigen::Vector4f centroid;
             float height, base_diameter, average_intensity;
-            if (isConeDetected(cluster, centroid, height, base_diameter,average_intensity)) {
-                geometry_msgs::msg::PoseStamped pose_msg;
-                pose_msg.header.frame_id = "map"; // Publish in the global frame
-                // pose_msg.header.frame_id = "ZOE3/os_sensor"; // Use the correct frame ID
-                pose_msg.header.stamp = this->get_clock()->now();
-                pose_msg.pose.position.x = centroid[0];
-                pose_msg.pose.position.y = centroid[1];
-                pose_msg.pose.position.z = centroid[2];
-                pose_msg.pose.orientation.x = 0.0;
-                pose_msg.pose.orientation.y = 0.0;
-                pose_msg.pose.orientation.z = 0.0;
-                pose_msg.pose.orientation.w = 1.0;
+            if (isConeDetected(cluster, centroid, height, base_diameter, average_intensity)) {
+                geometry_msgs::msg::PointStamped sensor_point, map_point;
+                sensor_point.header.frame_id = "ZOE3/os_sensor"; // Sensor frame
+                // sensor_point.header.stamp = this->get_clock()->now();
+                sensor_point.header.stamp = rclcpp::Time(0); // Use the latest available transform
+                sensor_point.point.x = centroid[0];
+                sensor_point.point.y = centroid[1];
+                sensor_point.point.z = centroid[2];
 
-                RCLCPP_INFO(this->get_logger(), "Publishing pose for cluster %d at (%f, %f, %f)", cluster_id, centroid[0], centroid[1], centroid[2]);
-                pose_publisher_->publish(pose_msg);
-                cluster_id++;
+                try {
+                    if (tf_buffer_->canTransform("map", "ZOE3/os_sensor", tf2::TimePointZero)) {
+                        map_point = tf_buffer_->transform(sensor_point, "map", tf2::durationFromSec(1.0));
+
+                        // Publish the transformed pose
+                        geometry_msgs::msg::PoseStamped pose_msg;
+                        pose_msg.header.frame_id = "map"; // Publish in the map frame
+                        pose_msg.header.stamp = this->get_clock()->now();
+                        pose_msg.pose.position.x = map_point.point.x;
+                        pose_msg.pose.position.y = map_point.point.y;
+                        pose_msg.pose.position.z = map_point.point.z;
+                        pose_msg.pose.orientation.x = 0.0;
+                        pose_msg.pose.orientation.y = 0.0;
+                        pose_msg.pose.orientation.z = 0.0;
+                        pose_msg.pose.orientation.w = 1.0;
+
+                        RCLCPP_INFO(this->get_logger(), "Publishing transformed pose for cluster %d at (%f, %f, %f)", cluster_id, map_point.point.x, map_point.point.y, map_point.point.z);
+                        pose_publisher_->publish(pose_msg);
+                    } else {
+                        RCLCPP_ERROR(this->get_logger(), "Transform not available from [ZOE3/os_sensor] to [map]");
+                    }
+                } catch (const tf2::TransformException& ex) {
+                    RCLCPP_ERROR(this->get_logger(), "Transform error: %s", ex.what());
+                }
             }
         }
     }
