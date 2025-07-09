@@ -1,0 +1,68 @@
+---
+common:
+  # before_commands will be executed in each pane before doing anything else. Use this e.g. for
+  #   - sourcing an environment
+  #   - ssh-ing to another machine
+  before_commands:
+    - source ~/.bashrc && cd ~/mov_ws # before commands can be specified global and per window
+
+  # The default window will be the one displayed when first connecting to the tmux session
+  default_window: some_other_window
+parameters:
+  # Parameters specified here can be used below and they can be overwritten at runtime
+  show_layouts: true # This parameter is used together with the if flag below
+  # replacement_param: world\! # Parameters can also be used as replacement templates
+
+# Everything will be opened in windows. Windows can have multiple splits.
+windows:
+  - name: rviz
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - cd ./src/jemaro_days_2025/data && rviz2 -d jemaro.rviz
+
+  - name: path rosbag
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - cd src/jemaro_days_2025/data/paths_Zoe && ros2 bag play path_zoe --remap /ZOE3/path_follower/setPath:=path -l
+  # - name: rviz
+  #   if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+  #   layout: no_split # One can use the default layouts specified by tmux
+  #   splits:
+  #     - commands:
+  #       - rviz2
+  - name: point cloud rosbag
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - cd src/jemaro_days_2025/data/rosbag2_2025_06_26-10_27_18 && ros2 bag play rosbag2_2025_06_26-10_27_18_0.db3 -l
+
+  - name: point down sampled
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - ros2 launch pointcloud_downsampling pointcloud_downsampling.launch.py
+  - name: point filtered
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - ros2 run clean_point_cloud clean_point_cloud_node
+
+  - name: detection node
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    splits:
+      - commands:
+        - ros2 run object_detection cone_detection_pcl
+
+  - name: some_other_window
+    if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
+    layout: no_split # One can use the default layouts specified by tmux
+    commands:
+      - echo "termination of the session command is 'tmux kill-session'"
