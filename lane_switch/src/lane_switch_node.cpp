@@ -1,6 +1,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 #include <memory>
 #include <chrono>
 #include <vector>
@@ -9,17 +12,18 @@
 
 using namespace std::chrono_literals;
 
+struct Obstacle
+{
+  double x;
+  double y;
+  bool passed = false;
+};
+
 class LaneSwitchingPlanner : public rclcpp::Node
 {
 public:
   LaneSwitchingPlanner() : Node("lane_switching_planner"), current_state_(State::REFERENCE_PATH)
   {
-    // Configuration parameters
-    obstacle_positions_ = {
-        // {1.77, -0.44}, // First obstacle (right side)
-        {1040.0, 749.0},
-        {1.88, 6.95} // Second obstacle (right side)
-    };
     // Declare parameters with default values
     this->declare_parameter<double>("trigger_distance", 20.0);
     this->declare_parameter<double>("avoidance_duration", 1.5);
@@ -28,6 +32,7 @@ public:
     this->declare_parameter<double>("left_lane_position_ratio", 0.3);
     this->declare_parameter<double>("path_extension_length", 50.0);
     this->declare_parameter<double>("path_extension_resolution", 1.0);
+    this->declare_parameter<double>("obstacle_min_separation", 2.0); // Minimum distance between obstacles
 
     // Get parameter values
     trigger_distance_ = this->get_parameter("trigger_distance").as_double();
@@ -37,6 +42,7 @@ public:
     left_lane_position_ratio_ = this->get_parameter("left_lane_position_ratio").as_double();
     path_extension_length_ = this->get_parameter("path_extension_length").as_double();
     path_extension_resolution_ = this->get_parameter("path_extension_resolution").as_double();
+    obstacle_min_separation_ = this->get_parameter("obstacle_min_separation").as_double();
 
     // Create subscribers
     right_threshold_sub_ = this->create_subscription<nav_msgs::msg::Path>(
@@ -72,6 +78,14 @@ public:
           checkObstacleProximity();
         });
 
+    // New subscriber for obstacle positions
+    obstacles_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/filtered_cluster_poses", 10,
+        [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+        {
+          updateObstaclePositions(msg->pose.position.x, msg->pose.position.y);
+        });
+
     // Create publisher
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/ZOE3/path_follower/setPath", 10);
 
@@ -79,22 +93,21 @@ public:
     publish_timer_ = this->create_wall_timer(
         50ms, [this]()
         {
-        updatePath();
-        // Extend the final path before publishing
-        nav_msgs::msg::Path extended_path = extendPath(reference_path_);
-        path_pub_->publish(extended_path); });
+          updatePath();
+          nav_msgs::msg::Path extended_path = extendPath(reference_path_);
+          path_pub_->publish(extended_path); });
 
     return_check_timer_ = this->create_wall_timer(
         1s, [this]()
         {
-            if (current_state_ == State::LEFT_LANE) {
-              auto elapsed = (this->now() - transition_start_time_).seconds();
-              if (elapsed >= avoidance_duration_) {
-                current_state_ = State::TRANSITION_TO_REF;
-                transition_start_time_ = this->now();
-                RCLCPP_INFO(this->get_logger(), "Avoidance complete. Returning to reference path");
-              }
-            } });
+          if (current_state_ == State::LEFT_LANE) {
+            auto elapsed = (this->now() - transition_start_time_).seconds();
+            if (elapsed >= avoidance_duration_) {
+              current_state_ = State::TRANSITION_TO_REF;
+              transition_start_time_ = this->now();
+              RCLCPP_INFO(this->get_logger(), "Avoidance complete. Returning to reference path");
+            }
+          } });
 
     RCLCPP_INFO(this->get_logger(), "Lane switching planner initialized");
     RCLCPP_INFO(this->get_logger(), "Will switch lanes when obstacles are within %.1f meters", trigger_distance_);
@@ -109,6 +122,29 @@ private:
     LEFT_LANE,          // Driving in left lane (35% from left threshold)
     TRANSITION_TO_REF   // Returning to reference path
   };
+
+  void updateObstaclePositions(double x, double y)
+  {
+    // Check if this position is too close to existing obstacles
+    for (auto &obstacle : obstacle_positions_)
+    {
+      double dx = x - obstacle.x;
+      double dy = y - obstacle.y;
+      if (std::hypot(dx, dy) < obstacle_min_separation_)
+      {
+        return;
+      }
+    }
+
+    // Add new obstacle position
+    obstacle_positions_.push_back({x, y, false});
+
+    // Limit the number of obstacles tracked
+    if (obstacle_positions_.size() > 3)
+    {
+      obstacle_positions_.erase(obstacle_positions_.begin());
+    }
+  }
 
   nav_msgs::msg::Path extendPath(const nav_msgs::msg::Path &original_path)
   {
@@ -167,31 +203,70 @@ private:
 
   void checkObstacleProximity()
   {
-    if (!current_pose_ || current_state_ == State::LEFT_LANE ||
-        current_state_ == State::TRANSITION_TO_LEFT)
+    if (!current_pose_ || current_state_ != State::REFERENCE_PATH)
     {
       return;
     }
 
-    bool obstacle_nearby = false;
-    for (const auto &obstacle : obstacle_positions_)
+    // Get vehicle heading from orientation
+    double vehicle_yaw = 0.0;
+    tf2::Quaternion q(
+        current_pose_->orientation.x,
+        current_pose_->orientation.y,
+        current_pose_->orientation.z,
+        current_pose_->orientation.w);
+    tf2::Matrix3x3 m(q);
+    double roll, pitch;
+    m.getRPY(roll, pitch, vehicle_yaw);
+
+    // Vehicle forward vector
+    double forward_x = std::cos(vehicle_yaw);
+    double forward_y = std::sin(vehicle_yaw);
+
+    bool obstacle_in_front = false;
+    for (auto &obstacle : obstacle_positions_)
     {
-      double dx = current_pose_->position.x - obstacle.first;
-      double dy = current_pose_->position.y - obstacle.second;
+      if (obstacle.passed)
+        continue;
+
+      double dx = obstacle.x - current_pose_->position.x;
+      double dy = obstacle.y - current_pose_->position.y;
       double distance = std::hypot(dx, dy);
 
+      // Check if obstacle is behind us
+      double dot_product = dx * forward_x + dy * forward_y;
+      if (dot_product < 0)
+      {
+        obstacle.passed = true;
+        RCLCPP_WARN(this->get_logger(), "Marked obstacle at (%.2f, %.2f) as passed", obstacle.x, obstacle.y);
+        continue;
+      }
+
+      // Only consider obstacles in front within trigger distance
       if (distance < trigger_distance_)
       {
-        obstacle_nearby = true;
+        obstacle_in_front = true;
         break;
       }
     }
 
-    if (obstacle_nearby && current_state_ == State::REFERENCE_PATH)
+    // Remove passed obstacles
+    obstacle_positions_.erase(
+        std::remove_if(obstacle_positions_.begin(), obstacle_positions_.end(),
+                       [](const Obstacle &o)
+                       { return o.passed; }),
+        obstacle_positions_.end());
+
+    if (obstacle_in_front)
     {
       current_state_ = State::TRANSITION_TO_LEFT;
       transition_start_time_ = this->now();
-      RCLCPP_WARN(this->get_logger(), "Obstacle detected! Switching to left lane");
+      RCLCPP_WARN(this->get_logger(), "Obstacle detected ahead! Switching to left lane");
+      RCLCPP_WARN(this->get_logger(),
+                  "Obstacle detected ahead! Switching to left lane\n"
+                  "  Vehicle Position: (%.2f, %.2f)\n",
+                  current_pose_->position.x,
+                  current_pose_->position.y);
     }
   }
 
@@ -204,8 +279,7 @@ private:
     }
 
     reference_path_.poses.clear();
-    // reference_path_.header.frame_id = ref_path_->header.frame_id;
-    reference_path_.header.frame_id = "map"; // Set to appropriate frame
+    reference_path_.header.frame_id = "map";
     reference_path_.header.stamp = this->now();
 
     size_t path_length = std::min({right_threshold_->poses.size(),
@@ -242,7 +316,7 @@ private:
       if (ratio >= 1.0)
       {
         current_state_ = State::LEFT_LANE;
-        transition_start_time_ = this->now(); // Start timer for return
+        transition_start_time_ = this->now();
         RCLCPP_INFO(this->get_logger(), "Now in left lane (avoiding obstacles)");
       }
       break;
@@ -294,7 +368,7 @@ private:
     result.position.x = pose1.position.x + ratio * (pose2.position.x - pose1.position.x);
     result.position.y = pose1.position.y + ratio * (pose2.position.y - pose1.position.y);
     result.position.z = pose1.position.z + ratio * (pose2.position.z - pose1.position.z);
-    result.orientation = pose1.orientation; // Maintain initial orientation
+    result.orientation = pose1.orientation;
     return result;
   }
 
@@ -311,6 +385,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr left_threshold_sub_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr ref_path_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ground_truth_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr obstacles_sub_;
 
   // Publisher
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
@@ -325,20 +400,21 @@ private:
   nav_msgs::msg::Path::SharedPtr ref_path_;
   nav_msgs::msg::Path reference_path_;
   std::optional<geometry_msgs::msg::Pose> current_pose_;
+  std::vector<Obstacle> obstacle_positions_;
 
   // State
   State current_state_;
   rclcpp::Time transition_start_time_;
 
   // Configuration
-  std::vector<std::pair<double, double>> obstacle_positions_;
   double trigger_distance_;
+  double avoidance_duration_;
   double transition_duration_;
+  double return_transition_duration_;
   double left_lane_position_ratio_;
   double path_extension_length_;
   double path_extension_resolution_;
-  double avoidance_duration_;
-  double return_transition_duration_;
+  double obstacle_min_separation_;
 };
 
 int main(int argc, char *argv[])

@@ -9,12 +9,14 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
 add_executable(lane_switch_node src/lane_switch_node.cpp)
-ament_target_dependencies(lane_switch_node rclcpp nav_msgs)
+ament_target_dependencies(lane_switch_node rclcpp nav_msgs geometry_msgs tf2)
 
 target_include_directories(lane_switch_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
