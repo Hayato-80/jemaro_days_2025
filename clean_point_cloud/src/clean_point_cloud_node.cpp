@@ -38,7 +38,7 @@ private:
       float y = *reinterpret_cast<const float *>(point_ptr + 4); // y at offset 4
       float z = *reinterpret_cast<const float *>(point_ptr + 8); // z at offset 8
 
-      if ((z >= -1.0f && z <= 1.5f) && (y <= 5.0f) && (x > 0.0f) && (y >= -5.0f))
+      if ((z >= -3.0f && z <= 0.0f) && (y <= 3.0f) && (y >= -1.5f) && (x < 25.0f) && (x > 0.0f))
       {
         // Keep point
         filtered_msg->data.insert(filtered_msg->data.end(), point_ptr, point_ptr + point_size);
