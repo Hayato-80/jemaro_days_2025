@@ -1,19 +1,15 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>clean_point_cloud</name>
+  <name>lane_switch</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
   <maintainer email="paul.phamdang@laposte.net">paul</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <depend>sensor_msgs</depend>
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
-  <exec_depend>ament_index_python</exec_depend>
-
-
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

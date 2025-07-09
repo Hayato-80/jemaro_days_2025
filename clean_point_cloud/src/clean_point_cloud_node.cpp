@@ -7,7 +7,7 @@ class PointCloudFilterNode : public rclcpp::Node
 {
 public:
   PointCloudFilterNode()
-      : Node("pointcloud_z_y_x_filter_node")
+      : Node("clean_point_cloud_node")
   {
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/ZOE3/os_node/points_downsampled",
@@ -38,7 +38,7 @@ private:
       float y = *reinterpret_cast<const float *>(point_ptr + 4); // y at offset 4
       float z = *reinterpret_cast<const float *>(point_ptr + 8); // z at offset 8
 
-      if ((z >= -1.2f && z <= 2.0f) && (y <= 10.0f) && (x > 0.0f) && (y >= -10.0f))
+      if ((z >= -1.0f && z <= 1.5f) && (y <= 5.0f) && (x > 0.0f) && (y >= -5.0f))
       {
         // Keep point
         filtered_msg->data.insert(filtered_msg->data.end(), point_ptr, point_ptr + point_size);
