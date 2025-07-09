@@ -14,6 +14,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 find_package(tf2 REQUIRED)
 find_package(tf2_msgs REQUIRED)
@@ -38,6 +39,7 @@ ament_target_dependencies(cone_detection_pcl
   tf2_geometry_msgs 
   pcl_conversions 
   pcl_msgs
+  nav_msgs
 )
 target_link_libraries(cone_detection_pcl ${PCL_LIBRARIES})
 install(TARGETS cone_detection_pcl DESTINATION lib/${PROJECT_NAME})
