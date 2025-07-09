@@ -19,13 +19,23 @@ public:
         {1.77, -0.44}, // First obstacle (right side)
         {1.88, 6.95}   // Second obstacle (right side)
     };
-    trigger_distance_ = 20.0;          // meters
-    avoidance_duration_ = 1.5;         // seconds to stay in left lane after avoiding
-    transition_duration_ = 4.0;        // seconds for lane change (increased for smoothness)
-    return_transition_duration_ = 3.0; // faster return transition
-    left_lane_position_ratio_ = 0.3;   // 30% from left threshold (70% from right)
-    path_extension_length_ = 50.0;     // meters to extend final path
-    path_extension_resolution_ = 1.0;  // meters between extended points
+    // Declare parameters with default values
+    this->declare_parameter<double>("trigger_distance", 20.0);
+    this->declare_parameter<double>("avoidance_duration", 1.5);
+    this->declare_parameter<double>("transition_duration", 4.0);
+    this->declare_parameter<double>("return_transition_duration", 3.0);
+    this->declare_parameter<double>("left_lane_position_ratio", 0.3);
+    this->declare_parameter<double>("path_extension_length", 50.0);
+    this->declare_parameter<double>("path_extension_resolution", 1.0);
+
+    // Get parameter values
+    trigger_distance_ = this->get_parameter("trigger_distance").as_double();
+    avoidance_duration_ = this->get_parameter("avoidance_duration").as_double();
+    transition_duration_ = this->get_parameter("transition_duration").as_double();
+    return_transition_duration_ = this->get_parameter("return_transition_duration").as_double();
+    left_lane_position_ratio_ = this->get_parameter("left_lane_position_ratio").as_double();
+    path_extension_length_ = this->get_parameter("path_extension_length").as_double();
+    path_extension_resolution_ = this->get_parameter("path_extension_resolution").as_double();
 
     // Create subscribers
     right_threshold_sub_ = this->create_subscription<nav_msgs::msg::Path>(
