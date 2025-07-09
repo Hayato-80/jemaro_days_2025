@@ -266,7 +266,7 @@ private:
                 marker.header.frame_id = "map";
                 marker.ns = "cluster_visualization";
                 marker.id = cluster_id;
-                marker.type = visualization_msgs::msg::Marker::SPHERE;
+                marker.type = visualization_msgs::msg::Marker::CYLINDER;
                 marker.action = visualization_msgs::msg::Marker::ADD;
                 marker.pose.position.x = map_point.point.x;
                 marker.pose.position.y = map_point.point.y;
