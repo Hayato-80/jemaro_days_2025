@@ -51,13 +51,12 @@ public:
         // pc_subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       	// 	"/ZOE3/os_node/points", 10, std::bind(&DetectionNode::pointcloud_callback, this, std::placeholders::_1));
         path_subscription_ = this->create_subscription<nav_msgs::msg::Path>(
-            "/path_ref", 10, std::bind(&DetectionNode::path_callback, this, std::placeholders::_1));
+            "/path_right", 10, std::bind(&DetectionNode::path_callback, this, std::placeholders::_1));
         // init publishers
-        // New publisher (in your constructor)
         colored_pc_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/colored_pointcloud", 10);
-        pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/filtered_cluster_poses", 10);
-        
-        marker_publisher_ = create_publisher<visualization_msgs::msg::Marker>("/visualization_marker", 10);
+        pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/cone_poses", 10);
+
+        marker_publisher_ = create_publisher<visualization_msgs::msg::Marker>("/cone_marker", 10);
         
         // tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
         tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -79,6 +78,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colored_pc_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
+
 
     std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
 
@@ -118,28 +118,6 @@ private:
 
         return cluster_indices;
     }
-
-    // bool isConeDetected_intensity(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cluster, Eigen::Vector4f& centroid, float& height, float& base_diameter, float& average_intensity) {
-    //     pcl::compute3DCentroid(*cluster, centroid);
-
-    //     pcl::PointXYZI min_pt, max_pt;
-    //     pcl::getMinMax3D(*cluster, min_pt, max_pt);
-    //     height = max_pt.z - min_pt.z;
-    //     base_diameter = std::sqrt(std::pow(max_pt.x - min_pt.x, 2) + std::pow(max_pt.y - min_pt.y, 2));
-
-    //     // Calculate average intensity
-    //     float total_intensity = 0.0f;
-    //     for (const auto& point : cluster->points) {
-    //         total_intensity += point.intensity;
-    //     }
-    //     average_intensity = total_intensity / cluster->points.size();
-
-    //     // Add intensity-based filtering criteria
-    //     return (centroid[0] > 0.0 && std::abs(centroid[1]) < 2.0 &&
-    //             height > 0.3 && height < 1.0 &&
-    //             base_diameter > 0.2 && base_diameter < 0.5 &&
-    //             average_intensity > 50.0); // Adjust intensity threshold as needed
-    // }
 
     bool isConeDetected(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cluster, Eigen::Vector4f& centroid, float& height, float& base_diameter, float& average_intensity) {
         // Compute the centroid of the cluster
@@ -223,7 +201,7 @@ private:
         return cone_clusters;
     }
 
-    void publishConeData(const Eigen::Vector4f& centroid, float height, float base_diameter, int cluster_id) {
+    void publishConeData(const Eigen::Vector4f& centroid, int cluster_id) {
         geometry_msgs::msg::PointStamped sensor_point, map_point;
         sensor_point.header.frame_id = "ZOE3/os_sensor";
         // sensor_point.header.stamp = this->get_clock()->now();
@@ -264,7 +242,7 @@ private:
                 visualization_msgs::msg::Marker marker;
                 marker.header.stamp = this->get_clock()->now();
                 marker.header.frame_id = "map";
-                marker.ns = "cluster_visualization";
+                marker.ns = "cone_maker";
                 marker.id = cluster_id;
                 marker.type = visualization_msgs::msg::Marker::CYLINDER;
                 marker.action = visualization_msgs::msg::Marker::ADD;
@@ -316,8 +294,8 @@ private:
 
         sensor_msgs::msg::PointCloud2 output_msg;
         pcl::toROSMsg(*colored_cloud, output_msg);
-        // output_msg.header.frame_id = "map"; // Publish in the global frame
-        output_msg.header.frame_id = "ZOE3/os_sensor"; // Use the correct
+        output_msg.header.frame_id = "map"; // Publish in the global frame
+        // output_msg.header.frame_id = "ZOE3/os_sensor"; // Use the correct
         // output_msg.header.frame_id = "map"; // Use the correct frame ID
         output_msg.header.stamp = this->get_clock()->now();
         colored_pc_publisher_->publish(output_msg);
@@ -378,6 +356,7 @@ private:
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
         pcl::fromROSMsg(*msg, *cloud);
 
+
         // Remove flat surfaces
         removeFlatSurfaces(cloud);
 
@@ -385,14 +364,16 @@ private:
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_xyz(new pcl::PointCloud<pcl::PointXYZI>());
         pcl::copyPointCloud(*cloud, *cloud_xyz);
         std::vector<pcl::PointIndices> cluster_indices = performClustering(cloud_xyz);
-
+        
         // Filter cone clusters
-        float distance_threshold = 30.0;
+        // float distance_threshold = 20.0; // path_ref
+        float distance_threshold = 20.0; // path_right
         std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cone_clusters = filterConeClusters(cloud_xyz, cluster_indices, distance_threshold);
         RCLCPP_INFO(this->get_logger(), "Detected %zu clusters", cluster_indices.size());
         RCLCPP_INFO(this->get_logger(), "Filtered %zu cone clusters", cone_clusters.size());
 
         publishColoredPointCloud(cloud_xyz, cone_clusters);
+        
 
         // Publish poses and markers of filtered clusters
         int cluster_id = 0;
@@ -406,6 +387,7 @@ private:
                 sensor_point.point.x = centroid[0];
                 sensor_point.point.y = centroid[1];
                 sensor_point.point.z = centroid[2];
+                
 
                 try {
                     if (tf_buffer_->canTransform("map", "ZOE3/os_sensor", tf2::TimePointZero)) {
@@ -425,6 +407,8 @@ private:
 
                         RCLCPP_INFO(this->get_logger(), "Publishing transformed pose for cluster %d at (%f, %f, %f)", cluster_id, map_point.point.x, map_point.point.y, map_point.point.z);
                         pose_publisher_->publish(pose_msg);
+
+                        // publishConeData(centroid, cluster_id);
 
                         // Publish the marker for the cluster
                         publishClusterMarkers(cluster, cluster_id);

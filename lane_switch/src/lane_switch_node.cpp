@@ -80,7 +80,7 @@ public:
 
     // New subscriber for obstacle positions
     obstacles_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/filtered_cluster_poses", 10,
+        "/cone_poses", 10,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg)
         {
           updateObstaclePositions(msg->pose.position.x, msg->pose.position.y);
