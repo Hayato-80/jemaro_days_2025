@@ -34,14 +34,15 @@ windows:
     layout: no_split # One can use the default layouts specified by tmux
     splits:
       - commands:
-        - cd src/jemaro_days_2025/data/paths_Zoe && ros2 bag play path_zoe --remap /ZOE3/path_follower/setPath:=path_right -l
+      
+        - cd src/jemaro_days_2025/data/paths_Zoe && ros2 bag play path_right_zoe  --remap /ZOE3/path_follower/setPath:=path_right -l
 
   - name: path left rosbag
     if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
     layout: no_split # One can use the default layouts specified by tmux
     splits:
       - commands:
-        - cd src/jemaro_days_2025/data/paths_Zoe && ros2 bag play path_zoe --remap /ZOE3/path_follower/setPath:=path_left -l
+        - cd src/jemaro_days_2025/data/paths_Zoe && ros2 bag play path_left_zoe  --remap /ZOE3/path_follower/setPath:=path_left -l
         
   - name: point cloud rosbag
     if: show_layouts # this window will only be started when the 'show_layouts' parameter is true
