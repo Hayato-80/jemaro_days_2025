@@ -309,8 +309,8 @@ private:
             left_threshold_->poses[i].pose,
             right_threshold_->poses[i].pose,
             left_lane_position_ratio_);
-        auto pose = interpolatePose(ref_path_->poses[i].pose, left_lane_pose, ratio);
-        reference_path_.poses.push_back(createPathPose(pose));
+        // auto pose = interpolatePose(ref_path_->poses[i].pose, left_lane_pose, ratio);
+        reference_path_.poses.push_back(createPathPose(left_lane_pose));
       }
 
       if (ratio >= 1.0)
@@ -341,12 +341,12 @@ private:
       // Faster linear transition for return
       for (size_t i = 0; i < path_length; i++)
       {
-        auto left_lane_pose = interpolatePose(
-            left_threshold_->poses[i].pose,
-            right_threshold_->poses[i].pose,
-            left_lane_position_ratio_);
-        auto pose = interpolatePose(left_lane_pose, ref_path_->poses[i].pose, ratio);
-        reference_path_.poses.push_back(createPathPose(pose));
+        // auto left_lane_pose = interpolatePose(
+        //     left_threshold_->poses[i].pose,
+        //     right_threshold_->poses[i].pose,
+        //     left_lane_position_ratio_);
+        // auto pose = interpolatePose(left_lane_pose, ref_path_->poses[i].pose, ratio);
+        reference_path_.poses.push_back(createPathPose(ref_path_->poses[i].pose));
       }
 
       if (ratio >= 1.0)
