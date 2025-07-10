@@ -7,6 +7,9 @@ import os
 
 
 def generate_launch_description():
+    # Get the directory of the current launch file
+    launch_dir = os.path.dirname(os.path.realpath(__file__))
+
     clean_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -31,4 +34,13 @@ def generate_launch_description():
         # ],
     )
 
-    return LaunchDescription([clean_launch, cone_detection_node])
+    # RViz2 node with config file
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        arguments=["-d", os.path.join(launch_dir, "config_zoe.rviz")],
+        output="screen",
+    )
+
+    return LaunchDescription([clean_launch, cone_detection_node, rviz_node])
